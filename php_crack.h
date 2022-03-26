@@ -30,8 +30,10 @@
 
 #if HAVE_CRACK
 
+#if PHP_MAJOR_VERSION < 8
 #ifdef ZTS
 #include "TSRM.h"
+#endif
 #endif
 
 extern zend_module_entry crack_module_entry;
@@ -50,9 +52,8 @@ PHP_FUNCTION(crack_check);
 PHP_FUNCTION(crack_getlastmessage);
 
 ZEND_BEGIN_MODULE_GLOBALS(crack)
-    char *default_dictionary;
+	char *default_dictionary;
 	char *last_message;
-	int default_dict;
 ZEND_END_MODULE_GLOBALS(crack)
 
 #ifdef ZTS

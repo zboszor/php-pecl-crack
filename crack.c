@@ -1,6 +1,6 @@
 /*
    +----------------------------------------------------------------------+
-   | PHP Version 4                                                        |
+   | PHP Version 7+                                                       |
    +----------------------------------------------------------------------+
    | Copyright (c) 1997-2005 The PHP Group                                |
    +----------------------------------------------------------------------+
@@ -28,21 +28,46 @@
 #include "ext/standard/info.h"
 #include "ext/standard/php_string.h"
 
+#if PHP_MAJOR_VERSION >= 8
+#define TSRMLS_DC
+#define TSRMLS_CC
+#endif
+
 #if HAVE_CRACK
 
 #include "php_crack.h"
-#include "libcrack/src/cracklib.h"
+#include <packer.h>
+#include <sys/stat.h>
 
 /* True global resources - no need for thread safety here */
 static int le_crack;
 
 /* {{{ crack_functions[]
  */
-function_entry crack_functions[] = {
-	PHP_FE(crack_opendict,			NULL)
-	PHP_FE(crack_closedict,			NULL)
-	PHP_FE(crack_check,				NULL)
-	PHP_FE(crack_getlastmessage,	NULL)
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_crack_opendict, 0, 0, 1)
+	ZEND_ARG_VARIADIC_INFO(0, dictionary)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_crack_closedict, 0, 0, 1)
+	ZEND_ARG_INFO(0, dictionary)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_crack_check, 0, 0, 4)
+	ZEND_ARG_INFO(0, dictionary)
+	ZEND_ARG_INFO(0, password)
+	ZEND_ARG_VARIADIC_INFO(0, username)
+	ZEND_ARG_VARIADIC_INFO(0, gecos)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_crack_getlastmessage, 0, 0, 0)
+ZEND_END_ARG_INFO()
+
+static zend_function_entry crack_functions[] = {
+	PHP_FE(crack_opendict, arginfo_crack_opendict)
+	PHP_FE(crack_closedict, arginfo_crack_closedict)
+	PHP_FE(crack_check,	arginfo_crack_check)
+	PHP_FE(crack_getlastmessage, arginfo_crack_getlastmessage)
 	{NULL, NULL, NULL}
 };
 /* }}} */
@@ -50,9 +75,7 @@ function_entry crack_functions[] = {
 /* {{{ crack_module_entry
  */
 zend_module_entry crack_module_entry = {
-#if ZEND_MODULE_API_NO >= 20010901
-    STANDARD_MODULE_HEADER,
-#endif
+	STANDARD_MODULE_HEADER,
 	"crack",
 	crack_functions,
 	PHP_MINIT(crack), 
@@ -60,9 +83,7 @@ zend_module_entry crack_module_entry = {
 	PHP_RINIT(crack),
 	PHP_RSHUTDOWN(crack),
 	PHP_MINFO(crack),
-#if ZEND_MODULE_API_NO >= 20010901
-	"0.3",
-#endif
+	"1.0",
 	STANDARD_MODULE_PROPERTIES,
 };
 /* }}} */
@@ -84,97 +105,41 @@ PHP_INI_END()
 static void php_crack_init_globals(zend_crack_globals *crack_globals)
 {
 	crack_globals->last_message = NULL;
-	crack_globals->default_dict = -1;
 }
 /* }}} */
 
 /* {{{ php_crack_checkpath
  */
-static int php_crack_checkpath(char* path TSRMLS_DC)
+static int php_crack_checkpath(char *path TSRMLS_DC, int path_len TSRMLS_DC)
 {
 	char *filename;
 	int filename_len;
 	int result = SUCCESS;
-	
-	if (PG(safe_mode)) {
-		filename_len = strlen(path) + 10;
-		filename = (char *) emalloc(filename_len);
-		if (NULL == filename) {
-			return FAILURE;
-		}
-        
-		memset(filename, '\0', filename_len);
-		strcpy(filename, path);
-		strcat(filename, ".pwd");
-		if (!php_checkuid(filename, "r", CHECKUID_CHECK_FILE_AND_DIR)) {
-			efree(filename);
-			return FAILURE;
-		}
-		
-		memset(filename, '\0', filename_len);
-		strcpy(filename, path);
-		strcat(filename, ".pwi");
-		if (!php_checkuid(filename, "r", CHECKUID_CHECK_FILE_AND_DIR)) {
-			efree(filename);
-			return FAILURE;
-		}
-		
-		memset(filename, '\0', filename_len);
-		strcpy(filename, path);
-		strcat(filename, ".hwm");
-		if (!php_checkuid(filename, "r", CHECKUID_CHECK_FILE_AND_DIR)) {
-			efree(filename);
-			return FAILURE;
-		}
-	}
-	
-	if (php_check_open_basedir(path TSRMLS_CC)) {
+
+	if (!path || !path_len)
 		return FAILURE;
-	}
-	
+
+	filename_len = path_len + 1;
+	filename = (char *) emalloc(filename_len);
+	if (!filename)
+		return FAILURE;
+
+	filename[path_len] = '\0';
+	if (php_check_open_basedir(filename TSRMLS_CC))
+		return FAILURE;
+
 	return SUCCESS;
-}
-/* }}} */
-
-/* {{{ php_crack_set_default_dict
- */
-static void php_crack_set_default_dict(int id TSRMLS_DC)
-{
-	if (CRACKG(default_dict) != -1) {
-		zend_list_delete(CRACKG(default_dict));
-	}
-	
-	CRACKG(default_dict) = id;
-	zend_list_addref(id);
-}
-/* }}} */
-
-/* {{{ php_crack_get_default_dict
- */
-static int php_crack_get_default_dict(INTERNAL_FUNCTION_PARAMETERS)
-{
-	if ((-1 == CRACKG(default_dict)) && (NULL != CRACKG(default_dictionary))) {
-		CRACKLIB_PWDICT *pwdict;
-		printf("trying to open: %s\n", CRACKG(default_dictionary));
-		pwdict = cracklib_pw_open(CRACKG(default_dictionary), "r");
-		if (NULL != pwdict) {
-			ZEND_REGISTER_RESOURCE(return_value, pwdict, le_crack);
-			php_crack_set_default_dict(Z_LVAL_P(return_value) TSRMLS_CC);
-		}
-	}
-	
-	return CRACKG(default_dict);
 }
 /* }}} */
 
 /* {{{ php_crack_module_dtor
  */
-static void php_crack_module_dtor(zend_rsrc_list_entry *rsrc TSRMLS_DC)
+static void php_crack_module_dtor(zend_resource *rsrc TSRMLS_DC)
 {
-	CRACKLIB_PWDICT *pwdict = (CRACKLIB_PWDICT *) rsrc->ptr;
-	
+	PWDICT *pwdict = (PWDICT *) rsrc->ptr;
+
 	if (pwdict != NULL) {
-		cracklib_pw_close(pwdict);
+		PWClose(pwdict);
 	}
 }
 /* }}} */
@@ -186,11 +151,10 @@ PHP_MINIT_FUNCTION(crack)
 #ifdef ZTS
 	ZEND_INIT_MODULE_GLOBALS(crack, php_crack_init_globals, NULL);
 #endif
-	
+
 	REGISTER_INI_ENTRIES();
 	le_crack = zend_register_list_destructors_ex(php_crack_module_dtor, NULL, "crack dictionary", module_number);
-	Z_TYPE(crack_module_entry) = type;
-	
+
 	return SUCCESS;
 }
 
@@ -208,8 +172,7 @@ PHP_MSHUTDOWN_FUNCTION(crack)
 PHP_RINIT_FUNCTION(crack)
 {
 	CRACKG(last_message) = NULL;
-	CRACKG(default_dict) = -1;
-	
+
 	return SUCCESS;
 }
 /* }}} */
@@ -221,7 +184,7 @@ ZEND_MODULE_DEACTIVATE_D(crack)
 	if (NULL != CRACKG(last_message)) {
 		efree(CRACKG(last_message));
 	}
-	
+
 	return SUCCESS;
 }
 /* }}} */
@@ -233,80 +196,63 @@ PHP_MINFO_FUNCTION(crack)
 	php_info_print_table_start();
 	php_info_print_table_header(2, "crack support", "enabled");
 	php_info_print_table_end();
-	
+
 	DISPLAY_INI_ENTRIES();
 }
 /* }}} */
 
-/* {{{ proto resource crack_opendict(string dictionary)
+/* {{{ proto resource crack_opendict([string dictionary])
    Opens a new cracklib dictionary */
 PHP_FUNCTION(crack_opendict)
 {
-	char *path;
-	int path_len;
-	CRACKLIB_PWDICT *pwdict;
-	
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &path, &path_len) == FAILURE) {
+	char *path = NULL;
+	size_t path_len;
+	PWDICT *pwdict;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "|s", &path, &path_len) == FAILURE)
 		RETURN_FALSE;
+
+	if (!path || !path_len) {
+		path = CRACKG(default_dictionary);
+		path_len = (path ? strlen(path) : 0);
 	}
-	
-	if (php_crack_checkpath(path TSRMLS_CC) == FAILURE) {
+
+	if (php_crack_checkpath(path TSRMLS_CC, path_len TSRMLS_CC) == FAILURE)
 		RETURN_FALSE;
-	}
-	
-	pwdict = cracklib_pw_open(path, "r");
+
+	pwdict = PWOpen(path, "r");
+
 	if (NULL == pwdict) {
-#if ZEND_MODULE_API_NO >= 20021010
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Could not open crack dictionary: %s", path);
-#else
-		php_error(E_WARNING, "Could not open crack dictionary: %s", path);
-#endif
 		RETURN_FALSE;
 	}
-	
-	ZEND_REGISTER_RESOURCE(return_value, pwdict, le_crack);
-	php_crack_set_default_dict(Z_LVAL_P(return_value) TSRMLS_CC);
+
+	RETURN_RES(zend_register_resource(pwdict, le_crack));
 }
 /* }}} */
 
-/* {{{ proto bool crack_closedict([resource dictionary])
+/* {{{ proto bool crack_closedict(resource dictionary)
    Closes an open cracklib dictionary */
 PHP_FUNCTION(crack_closedict)
 {
 	zval *dictionary = NULL;
-	int id = -1;
-	CRACKLIB_PWDICT *pwdict;
-	
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "|r", &dictionary)) {
+	PWDICT *pwdict;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "r", &dictionary)) {
 		RETURN_FALSE;
 	}
-	
-	if (NULL == dictionary) {
-		id = php_crack_get_default_dict(INTERNAL_FUNCTION_PARAM_PASSTHRU);
-		if (id == -1) {
-#if ZEND_MODULE_API_NO >= 20021010
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Could not open default crack dicionary"); 
-#else
-			php_error(E_WARNING, "Could not open default crack dicionary"); 
-#endif
-			RETURN_FALSE;
-		}
-	}
-	ZEND_FETCH_RESOURCE(pwdict, CRACKLIB_PWDICT *, &dictionary, id, "crack dictionary", le_crack);
-	
-	if (NULL == dictionary) {
-		zend_list_delete(CRACKG(default_dict));
-		CRACKG(default_dict) = -1;
-	}
-	else {
-		zend_list_delete(Z_RESVAL_P(dictionary));
-	}
-	
+
+	pwdict = (PWDICT *)zend_fetch_resource(Z_RES_P(dictionary), "crack dictionary", le_crack);
+	if (pwdict == NULL)
+		RETURN_FALSE;
+
+	zend_list_delete(Z_RES_P(dictionary));
+
 	RETURN_TRUE;
 }
 /* }}} */
 
-/* {{{ proto bool crack_check(string password [, string username [, string gecos [, resource dictionary]]])
+/* {{{ proto bool crack_check(resource dictionary, string password [, string username [, string gecos]])
    Performs an obscure check with the given password */
 PHP_FUNCTION(crack_check)
 {
@@ -318,35 +264,22 @@ PHP_FUNCTION(crack_check)
 	char *gecos = NULL;
 	int gecos_len;
 	char *message;
-	CRACKLIB_PWDICT *pwdict;
-	int id = -1;
-	
+	PWDICT *pwdict;
+
 	if (NULL != CRACKG(last_message)) {
 		efree(CRACKG(last_message));
 		CRACKG(last_message) = NULL;
 	}
-	
-	if (zend_parse_parameters_ex(ZEND_PARSE_PARAMS_QUIET, ZEND_NUM_ARGS() TSRMLS_CC, "rs", &dictionary, &password, &password_len) == FAILURE) {
-		if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|ssr", &password, &password_len, &username, &username_len, &gecos, &gecos_len, &dictionary) == FAILURE) {
-			RETURN_FALSE;
-		}
-	}
-	
-	if (NULL == dictionary) {
-		id = php_crack_get_default_dict(INTERNAL_FUNCTION_PARAM_PASSTHRU);
-		if (id == -1) {
-#if ZEND_MODULE_API_NO >= 20021010
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Could not open default crack dicionary"); 
-#else
-			php_error(E_WARNING, "Could not open default crack dicionary"); 
-#endif
-			RETURN_FALSE;
-		}
-	}
-	ZEND_FETCH_RESOURCE(pwdict, CRACKLIB_PWDICT *, &dictionary, id, "crack dictionary", le_crack);
-	
-	message = cracklib_fascist_look_ex(pwdict, password, username, gecos);
-	
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "rs|ss", &dictionary, &password, &password_len, &username, &username_len, &gecos, &gecos_len) == FAILURE)
+		RETURN_FALSE;
+
+	pwdict = (PWDICT *)zend_fetch_resource(Z_RES_P(dictionary), "crack dictionary", le_crack);
+	if (pwdict == NULL)
+		RETURN_FALSE;
+
+	message = FascistLookUser(pwdict, password, username, gecos);
+
 	if (NULL == message) {
 		CRACKG(last_message) = estrdup("strong password");
 		RETURN_TRUE;
@@ -365,17 +298,13 @@ PHP_FUNCTION(crack_getlastmessage)
 	if (ZEND_NUM_ARGS() != 0) {
 		WRONG_PARAM_COUNT;
 	}
-	
+
 	if (NULL == CRACKG(last_message)) {
-#if ZEND_MODULE_API_NO >= 20021010
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "No obscure checks in this session");
-#else
-		php_error(E_WARNING, "No obscure checks in this session");
-#endif
 		RETURN_FALSE;
 	}
-	
-	RETURN_STRING(CRACKG(last_message), 1);
+
+	RETURN_STRING(CRACKG(last_message));
 }
 /* }}} */
 
