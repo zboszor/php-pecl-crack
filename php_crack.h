@@ -50,6 +50,7 @@ PHP_FUNCTION(crack_opendict);
 PHP_FUNCTION(crack_closedict);
 PHP_FUNCTION(crack_check);
 PHP_FUNCTION(crack_getlastmessage);
+PHP_FUNCTION(crack_fascistcheck);
 
 ZEND_BEGIN_MODULE_GLOBALS(crack)
 	char *default_dictionary;

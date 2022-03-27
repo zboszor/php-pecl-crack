@@ -63,11 +63,17 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_INFO_EX(arginfo_crack_getlastmessage, 0, 0, 0)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO_EX(arginfo_crack_fascistcheck, 0, 0, 2)
+	ZEND_ARG_INFO(0, password)
+	ZEND_ARG_VARIADIC_INFO(0, dictionary)
+ZEND_END_ARG_INFO()
+
 static zend_function_entry crack_functions[] = {
 	PHP_FE(crack_opendict, arginfo_crack_opendict)
 	PHP_FE(crack_closedict, arginfo_crack_closedict)
 	PHP_FE(crack_check,	arginfo_crack_check)
 	PHP_FE(crack_getlastmessage, arginfo_crack_getlastmessage)
+	PHP_FE(crack_fascistcheck, arginfo_crack_fascistcheck)
 	{NULL, NULL, NULL}
 };
 /* }}} */
@@ -323,6 +329,35 @@ PHP_FUNCTION(crack_getlastmessage)
 	}
 
 	RETURN_STRING(CRACKG(last_message));
+}
+/* }}} */
+
+/* {{{ proto bool|string crack_fascistcheck(string password, [string dictionary])
+   Calls FascistCheck from cracklib */
+PHP_FUNCTION(crack_fascistcheck)
+{
+	char *password = NULL;
+	size_t password_len;
+	char *path = NULL;
+	size_t path_len;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|s", &password, &password_len, &path, &path_len) == FAILURE)
+		RETURN_FALSE;
+
+	if (!path || !path_len) {
+		path = CRACKG(default_dictionary);
+		path_len = (path ? strlen(path) : 0);
+	}
+
+	if (php_crack_checkpath(path TSRMLS_CC, path_len TSRMLS_CC) == FAILURE)
+		RETURN_FALSE;
+
+	const char *result = FascistCheck(password, path);
+
+	if (result == NULL)
+		RETURN_TRUE;
+
+	RETURN_STRING(estrdup(result));
 }
 /* }}} */
 
