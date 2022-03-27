@@ -115,13 +115,31 @@ static int php_crack_checkpath(char *path TSRMLS_DC, int path_len TSRMLS_DC)
 	char *filename;
 	int filename_len;
 	int result = SUCCESS;
+	struct stat st;
 
 	if (!path || !path_len)
 		return FAILURE;
 
-	filename_len = path_len + 1;
+	filename_len = path_len + 10;
 	filename = (char *) emalloc(filename_len);
 	if (!filename)
+		return FAILURE;
+
+	memcpy(filename, path, path_len);
+
+	filename[path_len] = '\0';
+	strcat(filename, ".pwd");
+	if (stat(filename, &st) != 0)
+		return FAILURE;
+
+	filename[path_len] = '\0';
+	strcat(filename, ".pwi");
+	if (stat(filename, &st) != 0)
+		return FAILURE;
+
+	filename[path_len] = '\0';
+	strcat(filename, ".hwm");
+	if (stat(filename, &st) != 0)
 		return FAILURE;
 
 	filename[path_len] = '\0';
