@@ -89,7 +89,7 @@ zend_module_entry crack_module_entry = {
 	PHP_RINIT(crack),
 	PHP_RSHUTDOWN(crack),
 	PHP_MINFO(crack),
-	"1.0",
+	"1.1",
 	STANDARD_MODULE_PROPERTIES,
 };
 /* }}} */
