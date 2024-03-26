@@ -24,3 +24,5 @@ tests/*.log
 tests/*.out
 tests/*.php
 tests/*.sh
+crack.dep
+php_test_results_*.txt
